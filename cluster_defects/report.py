@@ -57,9 +57,9 @@ def _plot_space(
 ) -> None:
     projection, labels = _project(groups, random_seed)
     styles = {
-        "Train": ("#4C78A8", "o", 13, 0.45),
-        "Val": ("#B279A2", "s", 18, 0.62),
-        "Synthetic": ("#F58518", "D", 46, 0.95),
+        "Train": ("#3B82C4", "o", 16, 0.22),
+        "Val": ("#C45A9D", "o", 16, 0.28),
+        "Synthetic": ("#16A34A", "o", 16, 0.9),
     }
     for label, (color, marker, size, alpha) in styles.items():
         mask = labels == label
@@ -72,8 +72,8 @@ def _plot_space(
             marker=marker,
             s=size,
             alpha=alpha,
-            edgecolors="black" if label == "Synthetic" else "none",
-            linewidths=0.4 if label == "Synthetic" else 0,
+            edgecolors="none",
+            linewidths=0,
             label=label,
         )
     axis.set_title(title)
