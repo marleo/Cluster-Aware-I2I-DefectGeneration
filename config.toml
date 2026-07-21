@@ -1,0 +1,65 @@
+[paths]
+dataset_root = "C:/Users/Mario/Pictures/datasets/WBSD26/WT blade defect dataset/YOLO_training/Craze"
+dino_weights = "C:/Users/Mario/Documents/Paper02-Defect/models/dinov3_vits16_pretrain_lvd1689m-08c60483.pth"
+dino_repo = "C:/Users/Mario/.cache/torch/hub/facebookresearch_dinov3_main"
+output_root = "outputs"
+# Leave empty to compute clusters from DINO global features.
+cluster_manifest = ""
+
+[dataset]
+reference_splits = ["train", "val"]
+source_split = "train"
+supported_extensions = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"]
+box_padding_fraction = 0.20
+
+[dino]
+model_name = "dinov3_vits16"
+image_size = 512
+device = "auto"
+top_k = 5
+lower_quantile = 0.05
+duplicate_quantile = 0.99
+review_margin = 0.01
+fallback_window_sizes = [[2, 2], [4, 4], [8, 8]]
+window_stride = 1
+best_windows_to_average = 3
+
+[clustering]
+n_clusters = 6
+random_state = 42
+
+[comfyui]
+server_url = "http://127.0.0.1:8000"
+request_timeout_seconds = 30
+generation_timeout_seconds = 300
+poll_interval_seconds = 1.0
+
+[generation]
+checkpoint = "v1-5-pruned.safetensors"
+lora = "wtbsd_sd15_crack_defects-step00002250.safetensors"
+lora_model_strength = 0.85
+lora_clip_strength = 0.85
+positive_prompt = "wtb_crack, close-up photo of a white wind turbine blade with a single dark linear surface crack, centered on the visible blade surface, sharp narrow crack, realistic composite material texture, outdoor inspection image, industrial infrastructure, subtle weathering, high detail"
+negative_prompt = "text, sign, letters, words, watermark, low quality, blurry, deformed turbine, landscape-only, spots, speckles, pitting, stains, dirt, multiple defects, edge defect, cropped defect"
+width = 512
+height = 512
+steps = 30
+cfg = 6.5
+sampler_name = "euler"
+scheduler = "simple"
+denoise = 0.65
+seed = 3281407
+sources_per_cluster = 3
+variants_per_source = 4
+
+[filter]
+# Preserve notebook behavior around realism thresholds.
+use_review_margin = true
+# Disabled for img2img: proximity to a real source is expected.
+use_notebook_real_duplicate_gate = false
+# Reject an effectively unchanged source only at extremely high similarity.
+max_source_similarity = 0.985
+# Reject duplicates of synthetic images accepted earlier in this run.
+max_accepted_synthetic_similarity = 0.965
+copy_files = true
+

@@ -1,0 +1,85 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "v1-5-pruned.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "dino_reference_1010.jpg"
+    }
+  },
+  "3": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": ["2", 0],
+      "upscale_method": "lanczos",
+      "width": 512,
+      "height": 512,
+      "crop": "center"
+    }
+  },
+  "4": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": ["3", 0],
+      "vae": ["1", 2]
+    }
+  },
+  "5": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": ["1", 0],
+      "clip": ["1", 1],
+      "lora_name": "wtbsd_sd15_crack_defects-step00002250.safetensors",
+      "strength_model": 0.85,
+      "strength_clip": 0.85
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["5", 1],
+      "text": "wtb_crack, close-up photo of a white wind turbine blade with a single dark linear surface crack, centered on the visible blade surface, sharp narrow crack, realistic composite material texture, outdoor inspection image, industrial infrastructure, subtle weathering, high detail"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["5", 1],
+      "text": "text, sign, letters, words, watermark, low quality, blurry, deformed turbine, landscape-only, spots, speckles, pitting, stains, dirt, multiple defects, edge defect, cropped defect"
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["5", 0],
+      "seed": 3281407,
+      "steps": 30,
+      "cfg": 6.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["4", 0],
+      "denoise": 0.65
+    }
+  },
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["8", 0],
+      "vae": ["1", 2]
+    }
+  },
+  "10": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["9", 0],
+      "filename_prefix": "cluster_img2img/manual_test"
+    }
+  }
+}
+
