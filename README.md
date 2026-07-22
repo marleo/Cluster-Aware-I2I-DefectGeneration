@@ -86,7 +86,7 @@ python main.py generate --sources-per-cluster 3 --variants-per-source 4
 # 3. Filter every generated candidate.
 python main.py filter
 
-# 4. Plot real train/validation and accepted synthetic distributions.
+# 4. Plot DINOv3, HOG, and LBP train/validation/synthetic distributions.
 python main.py plot
 ```
 
@@ -121,6 +121,7 @@ outputs/
     filter_results.csv
   reports/
     feature_distribution.png
+    handcrafted_feature_distribution.png
     mmd_summary.csv
 ```
 
@@ -173,4 +174,3 @@ accepted synthetic images.
 ```powershell
 python -m unittest discover -s tests -v
 ```
-

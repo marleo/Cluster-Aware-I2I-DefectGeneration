@@ -4,12 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from cluster_defects.config import Config
 from cluster_defects.dataset import read_yolo_boxes
 from cluster_defects.similarity import leave_one_out_scores, top_k_mean_similarity
 from cluster_defects.workflow import build_img2img_api_workflow
+from cluster_defects.report import _extract_hog_lbp
 
 
 class DatasetTests(unittest.TestCase):
@@ -68,6 +70,19 @@ class ConfigTests(unittest.TestCase):
         config = Config.load(config_path)
         self.assertEqual(config.output_root.name, "outputs")
         self.assertEqual(config.output_root.parent, config_path.parent.resolve())
+
+
+class ReportFeatureTests(unittest.TestCase):
+    def test_hog_and_lbp_descriptors_are_finite(self) -> None:
+        image = np.tile(np.arange(128, dtype=np.uint8), (128, 1))
+        hog_features, lbp_features = _extract_hog_lbp(image)
+
+        self.assertEqual(hog_features.shape, (1764,))
+        self.assertEqual(lbp_features.shape, (28,))
+        self.assertTrue(np.isfinite(hog_features).all())
+        self.assertTrue(np.isfinite(lbp_features).all())
+        self.assertAlmostEqual(float(lbp_features[:10].sum()), 1.0)
+        self.assertAlmostEqual(float(lbp_features[10:].sum()), 1.0)
 
 
 if __name__ == "__main__":

@@ -15,8 +15,10 @@ import matplotlib
 import numpy as np
 import pandas as pd
 import torch
+from PIL import Image, ImageOps
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+from skimage.feature import hog, local_binary_pattern
 
 from .config import Config
 from .feature_bank import FeatureBank
@@ -79,7 +81,160 @@ def _plot_space(
     axis.set_title(title)
     axis.grid(alpha=0.25)
     axis.legend(frameon=False)
-    axis.text(0.5, -0.16, footer, transform=axis.transAxes, ha="center", va="top")
+    if footer:
+        axis.text(0.5, -0.16, footer, transform=axis.transAxes, ha="center", va="top")
+
+
+def _resolve_reference_image(config: Config, row: pd.Series) -> Path:
+    recorded_path = Path(str(row["image_path"]))
+    if recorded_path.exists():
+        return recorded_path
+
+    dataset_root = config.path("dataset_root")
+    assert dataset_root is not None
+    portable_path = dataset_root / "images" / str(row["split"]) / recorded_path.name
+    if portable_path.exists():
+        return portable_path
+    raise FileNotFoundError(f"Reference image not found: {portable_path}")
+
+
+def _resolve_synthetic_image(config: Config, row: pd.Series) -> Path:
+    for column in ("destination_path", "output_path"):
+        recorded_path = Path(str(row[column]))
+        if recorded_path.exists():
+            return recorded_path
+        filename = recorded_path.name
+        candidates = (
+            config.output_root / "filtered" / "accepted" / filename,
+            config.output_root / "candidates" / "images" / filename,
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+    raise FileNotFoundError(f"Synthetic image not found for {row['candidate_id']}")
+
+
+def _load_gray_crop(
+    image_path: Path,
+    box: tuple[float, float, float, float],
+    size: int = 128,
+) -> np.ndarray:
+    with Image.open(image_path) as opened:
+        image = ImageOps.grayscale(opened)
+        x1, y1, x2, y2 = box
+        left = max(0, min(image.width - 1, int(np.floor(x1))))
+        top = max(0, min(image.height - 1, int(np.floor(y1))))
+        right = max(left + 1, min(image.width, int(np.ceil(x2))))
+        bottom = max(top + 1, min(image.height, int(np.ceil(y2))))
+        crop = image.crop((left, top, right, bottom)).resize(
+            (size, size),
+            Image.Resampling.BILINEAR,
+        )
+        return np.asarray(crop, dtype=np.uint8)
+
+
+def _extract_hog_lbp(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    hog_features = hog(
+        gray,
+        orientations=9,
+        pixels_per_cell=(16, 16),
+        cells_per_block=(2, 2),
+        block_norm="L2-Hys",
+        feature_vector=True,
+    ).astype(np.float32)
+
+    lbp_histograms = []
+    for points, radius in ((8, 1), (16, 2)):
+        codes = local_binary_pattern(gray, points, radius, method="uniform")
+        histogram, _ = np.histogram(
+            codes,
+            bins=np.arange(points + 3),
+            range=(0, points + 2),
+        )
+        normalized = histogram.astype(np.float32)
+        normalized /= max(float(normalized.sum()), 1.0)
+        lbp_histograms.append(normalized)
+    lbp_features = np.concatenate(lbp_histograms)
+    return hog_features, lbp_features
+
+
+def _handcrafted_groups(
+    config: Config,
+    bank: FeatureBank,
+    results: pd.DataFrame,
+) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+    descriptors: dict[str, dict[str, list[np.ndarray]]] = {
+        "HOG": {"Train": [], "Val": [], "Synthetic": []},
+        "LBP": {"Train": [], "Val": [], "Synthetic": []},
+    }
+
+    for _, row in bank.local_metadata.iterrows():
+        split = str(row["split"])
+        if split not in ("train", "val"):
+            continue
+        gray = _load_gray_crop(
+            _resolve_reference_image(config, row),
+            (float(row["x1"]), float(row["y1"]), float(row["x2"]), float(row["y2"])),
+        )
+        hog_features, lbp_features = _extract_hog_lbp(gray)
+        label = split.title()
+        descriptors["HOG"][label].append(hog_features)
+        descriptors["LBP"][label].append(lbp_features)
+
+    accepted = results.loc[results["decision"] == "accepted"]
+    for _, row in accepted.iterrows():
+        gray = _load_gray_crop(
+            _resolve_synthetic_image(config, row),
+            (
+                float(row["best_window_x1"]),
+                float(row["best_window_y1"]),
+                float(row["best_window_x2"]),
+                float(row["best_window_y2"]),
+            ),
+        )
+        hog_features, lbp_features = _extract_hog_lbp(gray)
+        descriptors["HOG"]["Synthetic"].append(hog_features)
+        descriptors["LBP"]["Synthetic"].append(lbp_features)
+
+    def to_tensors(feature_name: str) -> dict[str, torch.Tensor]:
+        return {
+            label: torch.from_numpy(np.stack(values)).float()
+            for label, values in descriptors[feature_name].items()
+        }
+
+    return to_tensors("HOG"), to_tensors("LBP")
+
+
+def _create_handcrafted_report(
+    config: Config,
+    bank: FeatureBank,
+    results: pd.DataFrame,
+    report_dir: Path,
+    random_seed: int,
+) -> Path:
+    hog_groups, lbp_groups = _handcrafted_groups(config, bank, results)
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    _plot_space(
+        axes[0],
+        "HOG Defect-Window Distribution (Shape and Edges)",
+        hog_groups,
+        "",
+        random_seed,
+    )
+    _plot_space(
+        axes[1],
+        "LBP Defect-Window Distribution (Texture)",
+        lbp_groups,
+        "",
+        random_seed,
+    )
+    fig.suptitle("Cluster-Aware Img2Img: Handcrafted Feature Coverage", fontsize=16)
+    fig.tight_layout()
+    output_path = report_dir / "handcrafted_feature_distribution.png"
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Handcrafted feature report: {output_path}")
+    return output_path
 
 
 def create_distribution_report(config: Config) -> Path:
@@ -157,5 +312,6 @@ def create_distribution_report(config: Config) -> Path:
     fig.savefig(output_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
     pd.DataFrame(metrics).to_csv(report_dir / "mmd_summary.csv", index=False)
+    _create_handcrafted_report(config, bank, results, report_dir, random_seed)
     print(f"Distribution report: {output_path}")
     return output_path
